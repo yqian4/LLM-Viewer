@@ -196,32 +196,59 @@ class ModelAnalyzer:
         hidden_size = config.get_hidden_size(model_params)
         num_key_value_heads = config.get_num_key_value_heads(model_params)
         num_hidden_layers = config.get_num_hidden_layers(model_params)
+        num_active_experts = config.get_num_active_experts(model_params)
+        is_model_moe = "moe" in self.model_id
 
         for name, (ic, oc) in config.get_linear_layers(model_params, tp_size).items():
             # for linear layers
             is_kv_proj = name in ["k_proj", "v_proj"]
             is_normal_proj = not is_kv_proj
-            self._analyze_to_results(
-                "decode",
-                name,
-                OPs=ic * oc * batchsize * 2,
-                load_weight=ic * oc * w_byte,
-                load_act=ic * batchsize * a_byte,
-                store_act=0 if is_kv_proj else oc * batchsize * a_byte,
-                load_kv_cache=0,
-                store_kv_cache=(0 if is_normal_proj else oc * batchsize * kv_byte),
-            )
-            # for prefill
-            self._analyze_to_results(
-                "prefill",
-                name,
-                OPs=ic * oc * batchsize * seqlen * 2,
-                load_weight=ic * oc * w_byte,
-                load_act=ic * batchsize * seqlen * a_byte,
-                store_act=(0 if is_kv_proj else oc * batchsize * seqlen * a_byte),
-                load_kv_cache=0,
-                store_kv_cache=(0 if is_normal_proj else oc * batchsize * seqlen * kv_byte),
-            )
+            is_expert_proj = name in ["gate_proj", "up_proj", "down_proj"] if is_model_moe else False
+
+            if is_expert_proj:
+                self._analyze_to_results(
+                    "decode",
+                    name,
+                    OPs=ic * oc * batchsize * 2 * num_active_experts,
+                    load_weight=ic * oc * w_byte * num_active_experts,
+                    load_act=ic * batchsize * a_byte * num_active_experts,
+                    store_act=oc * batchsize * a_byte * num_active_experts,
+                    load_kv_cache=0,
+                    store_kv_cache=0,
+                )
+                # for prefill
+                self._analyze_to_results(
+                    "prefill",
+                    name,
+                    OPs=ic * oc * batchsize * seqlen * 2 * num_active_experts,
+                    load_weight=ic * oc * w_byte * num_active_experts,
+                    load_act=ic * batchsize * seqlen * a_byte * num_active_experts,
+                    store_act=oc * batchsize * seqlen * a_byte * num_active_experts,
+                    load_kv_cache=0,
+                    store_kv_cache=0,
+                )
+            else:
+                self._analyze_to_results(
+                    "decode",
+                    name,
+                    OPs=ic * oc * batchsize * 2,
+                    load_weight=ic * oc * w_byte,
+                    load_act=ic * batchsize * a_byte,
+                    store_act=0 if is_kv_proj else oc * batchsize * a_byte,
+                    load_kv_cache=0,
+                    store_kv_cache=(0 if is_normal_proj else oc * batchsize * kv_byte),
+                )
+                # for prefill
+                self._analyze_to_results(
+                    "prefill",
+                    name,
+                    OPs=ic * oc * batchsize * seqlen * 2,
+                    load_weight=ic * oc * w_byte,
+                    load_act=ic * batchsize * seqlen * a_byte,
+                    store_act=(0 if is_kv_proj else oc * batchsize * seqlen * a_byte),
+                    load_kv_cache=0,
+                    store_kv_cache=(0 if is_normal_proj else oc * batchsize * seqlen * kv_byte),
+                )
 
         # for attention
         head_size = hidden_size // num_attention_heads
@@ -316,16 +343,28 @@ class ModelAnalyzer:
                 store_kv_cache=0,
             )
         for name in ["mlp_act"]:
-            self._analyze_to_results(
-                "decode",
-                name,
-                OPs=batchsize * hidden_size * 1 * 2,
-                load_weight=0,
-                load_act=batchsize * hidden_size * 1 * a_byte * 2,
-                store_act=batchsize * hidden_size * 1 * a_byte,
-                load_kv_cache=0,
-                store_kv_cache=0,
-            )
+            if is_model_moe:
+                self._analyze_to_results(
+                    "decode",
+                    name,
+                    OPs=batchsize * hidden_size * 1 * 2 * num_active_experts,
+                    load_weight=0,
+                    load_act=batchsize * hidden_size * 1 * a_byte * 2 * num_active_experts,
+                    store_act=batchsize * hidden_size * 1 * a_byte * num_active_experts,
+                    load_kv_cache=0,
+                    store_kv_cache=0,
+                )
+            else:
+                self._analyze_to_results(
+                    "decode",
+                    name,
+                    OPs=batchsize * hidden_size * 1 * 2,
+                    load_weight=0,
+                    load_act=batchsize * hidden_size * 1 * a_byte * 2,
+                    store_act=batchsize * hidden_size * 1 * a_byte,
+                    load_kv_cache=0,
+                    store_kv_cache=0,
+                )
 
         # for prefill
         qk_matmul_OPs = seqlen * seqlen * head_size * num_attention_heads * batchsize * 2
@@ -406,16 +445,28 @@ class ModelAnalyzer:
                 store_kv_cache=0,
             )
         for name in ["mlp_act"]:
-            self._analyze_to_results(
-                "prefill",
-                name,
-                OPs=batchsize * hidden_size * seqlen * 1 * 2,
-                load_weight=0,
-                load_act=batchsize * hidden_size * seqlen * a_byte * 2,
-                store_act=batchsize * hidden_size * seqlen * a_byte,
-                load_kv_cache=0,
-                store_kv_cache=0,
-            )
+            if is_model_moe:
+                self._analyze_to_results(
+                    "prefill",
+                    name,
+                    OPs=batchsize * hidden_size * seqlen * 1 * 2 * num_active_experts,
+                    load_weight=0,
+                    load_act=batchsize * hidden_size * seqlen * a_byte * 2 * num_active_experts,
+                    store_act=batchsize * hidden_size * seqlen * a_byte * num_active_experts,
+                    load_kv_cache=0,
+                    store_kv_cache=0,
+                )
+            else:
+                self._analyze_to_results(
+                    "prefill",
+                    name,
+                    OPs=batchsize * hidden_size * seqlen * 1 * 2,
+                    load_weight=0,
+                    load_act=batchsize * hidden_size * seqlen * a_byte * 2,
+                    store_act=batchsize * hidden_size * seqlen * a_byte,
+                    load_kv_cache=0,
+                    store_kv_cache=0,
+                )
 
         # compute total
         total_results = {"decode": {}, "prefill": {}}
