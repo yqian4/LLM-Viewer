@@ -36,7 +36,7 @@ class ModelAnalyzer:
         assert config_file is not None, "config file is not found, please specify it manually."
         print(f"use config file {config_file} for {model_id}")
         if source == "huggingface":
-            self.model_params = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            self.model_params = AutoConfig.from_pretrained("./"+model_id+"/resolve/main/config.json", trust_remote_code=True)
         else:
             if not os.path.exists(f"model_params/{source}.py"):
                 raise Exception(f"model_params/{source}.py is not found")
@@ -196,8 +196,10 @@ class ModelAnalyzer:
         hidden_size = config.get_hidden_size(model_params)
         num_key_value_heads = config.get_num_key_value_heads(model_params)
         num_hidden_layers = config.get_num_hidden_layers(model_params)
-        num_active_experts = config.get_num_active_experts(model_params)
         is_model_moe = "moe" in self.model_id
+        if is_model_moe:
+            num_active_experts = config.get_num_active_experts(model_params)
+
 
         for name, (ic, oc) in config.get_linear_layers(model_params, tp_size).items():
             # for linear layers
@@ -320,10 +322,15 @@ class ModelAnalyzer:
 
         for name in config.get_norm_layers(model_params):
             # sum sub pow sum div mul add
+            if "rmsnorm" in name:
+                norm_OPs = batchsize * hidden_size * 1 * 4
+            else:
+                norm_OPs = batchsize * hidden_size * 1 * 7
+
             self._analyze_to_results(
                 "decode",
                 name,
-                OPs=batchsize * hidden_size * 1 * 7,
+                OPs=norm_OPs,
                 load_weight=0,
                 load_act=batchsize * hidden_size * 1 * a_byte,
                 store_act=batchsize * hidden_size * 1 * a_byte,
@@ -342,14 +349,14 @@ class ModelAnalyzer:
                 load_kv_cache=0,
                 store_kv_cache=0,
             )
-        for name in ["mlp_act"]:
+        for name in ["mlp_act"]: # swish activation
             if is_model_moe:
                 self._analyze_to_results(
                     "decode",
                     name,
-                    OPs=batchsize * hidden_size * 1 * 2 * num_active_experts,
+                    OPs=batchsize * hidden_size * 1 * 5 * num_active_experts,
                     load_weight=0,
-                    load_act=batchsize * hidden_size * 1 * a_byte * 2 * num_active_experts,
+                    load_act=batchsize * hidden_size * 1 * a_byte * num_active_experts,
                     store_act=batchsize * hidden_size * 1 * a_byte * num_active_experts,
                     load_kv_cache=0,
                     store_kv_cache=0,
@@ -358,9 +365,9 @@ class ModelAnalyzer:
                 self._analyze_to_results(
                     "decode",
                     name,
-                    OPs=batchsize * hidden_size * 1 * 2,
+                    OPs=batchsize * hidden_size * 1 * 5,
                     load_weight=0,
-                    load_act=batchsize * hidden_size * 1 * a_byte * 2,
+                    load_act=batchsize * hidden_size * 1 * a_byte,
                     store_act=batchsize * hidden_size * 1 * a_byte,
                     load_kv_cache=0,
                     store_kv_cache=0,
@@ -423,10 +430,15 @@ class ModelAnalyzer:
                 store_kv_cache=0,
             )
         for name in config.get_norm_layers(model_params):
+            if "rmsnorm" in name:
+                norm_OPs = batchsize * hidden_size * seqlen * 4
+            else:
+                norm_OPs = batchsize * hidden_size * seqlen * 7
+
             self._analyze_to_results(
                 "prefill",
                 name,
-                OPs=batchsize * hidden_size * seqlen * 7,
+                OPs=norm_OPs,
                 load_weight=0,
                 load_act=batchsize * hidden_size * seqlen * a_byte,
                 store_act=batchsize * hidden_size * seqlen * a_byte,
@@ -444,14 +456,14 @@ class ModelAnalyzer:
                 load_kv_cache=0,
                 store_kv_cache=0,
             )
-        for name in ["mlp_act"]:
+        for name in ["mlp_act"]: # swish activation
             if is_model_moe:
                 self._analyze_to_results(
                     "prefill",
                     name,
-                    OPs=batchsize * hidden_size * seqlen * 1 * 2 * num_active_experts,
+                    OPs=batchsize * hidden_size * seqlen * 1 * 5 * num_active_experts,
                     load_weight=0,
-                    load_act=batchsize * hidden_size * seqlen * a_byte * 2 * num_active_experts,
+                    load_act=batchsize * hidden_size * seqlen * a_byte * num_active_experts,
                     store_act=batchsize * hidden_size * seqlen * a_byte * num_active_experts,
                     load_kv_cache=0,
                     store_kv_cache=0,
@@ -460,9 +472,9 @@ class ModelAnalyzer:
                 self._analyze_to_results(
                     "prefill",
                     name,
-                    OPs=batchsize * hidden_size * seqlen * 1 * 2,
+                    OPs=batchsize * hidden_size * seqlen * 1 * 5,
                     load_weight=0,
-                    load_act=batchsize * hidden_size * seqlen * a_byte * 2,
+                    load_act=batchsize * hidden_size * seqlen * a_byte,
                     store_act=batchsize * hidden_size * seqlen * a_byte,
                     load_kv_cache=0,
                     store_kv_cache=0,
@@ -497,7 +509,7 @@ class ModelAnalyzer:
 
         # lm_head
         name = "lm_head"
-        args = {"batchsize": batchsize, "a_byte": a_byte, "w_byte": w_byte}
+        args = {"batchsize": batchsize, "seqlen":seqlen, "a_byte": a_byte, "w_byte": w_byte}
         for layer_info in self.config.post_process(self.model_params, args):
             self._analyze_to_results(**layer_info)
             for data_name in ALL_DATA_NAMES:

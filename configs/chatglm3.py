@@ -20,7 +20,7 @@ def get_vocab_size(model_params):
     return getattr(model_params, "padded_vocab_size")
 
 def get_norm_layers(model_params):
-    return ["attn_norm", "mlp_norm"]
+    return ["attn_rmsnorm", "mlp_rmsnorm"]
 
 def post_process(model_params,args):
     hiddensize=get_hidden_size(model_params)
