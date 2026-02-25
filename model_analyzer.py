@@ -197,8 +197,6 @@ class ModelAnalyzer:
         num_key_value_heads = config.get_num_key_value_heads(model_params)
         num_hidden_layers = config.get_num_hidden_layers(model_params)
 
-        expert_diff_ratio = 0.3
-
         is_model_moe = "moe" in self.model_id
         if is_model_moe:
             num_active_experts = config.get_num_active_experts(model_params) // tp_size
@@ -214,7 +212,7 @@ class ModelAnalyzer:
                     "decode",
                     name,
                     OPs=ic * oc * batchsize * 2 * num_active_experts,
-                    load_weight=ic * oc * w_byte * batchsize * num_active_experts * expert_diff_ratio,
+                    load_weight=ic * oc * w_byte * min(32, (batchsize * num_active_experts)),
                     load_act=ic * batchsize * a_byte * num_active_experts,
                     store_act=oc * batchsize * a_byte * num_active_experts,
                     load_kv_cache=0,
@@ -225,7 +223,7 @@ class ModelAnalyzer:
                     "prefill",
                     name,
                     OPs=ic * oc * batchsize * seqlen * 2 * num_active_experts,
-                    load_weight=ic * oc * w_byte * batchsize * num_active_experts * expert_diff_ratio,
+                    load_weight=ic * oc * w_byte * min(32, (batchsize * num_active_experts)),
                     load_act=ic * batchsize * seqlen * a_byte * num_active_experts,
                     store_act=oc * batchsize * seqlen * a_byte * num_active_experts,
                     load_kv_cache=0,
