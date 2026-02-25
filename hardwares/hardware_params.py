@@ -28,8 +28,10 @@ hardware_params = {
     # https://images.nvidia.com/aem-dam/Solutions/Data-Center/l4/nvidia-ada-gpu-architecture-whitepaper-v2.1.pdf
     # Ada SM has 256 KB Register File, and 128 KB of L1/Shared Memory
     "nvidia_L40": {"bandwidth": 864e9, "FP16": 181e12, "INT8": 362e12, "onchip_buffer": 36352e3},
+    "nvidia_RTX4090": {"bandwidth": 1008e9, "FP16": 82.5e12, "INT8": 1321e12, "onchip_buffer": 72*1024*1024},
     # Intel Skylake-X (Skylake-X, Cascade Lake) Intel Xeon Phi (Knights Landing, Knights Mill) Intel Ice Lake, Tiger Lake and Rocket Lake
     # support AVX-512 & FMA (512-bit), they has throughput of 1 cycle
     # https://www.intel.com/content/www/us/en/products/sku/230496/intel-core-i913900k-processor-36m-cache-up-to-5-80-ghz/specifications.html
     "intel_13900k": {"bandwidth": 89.6e9, "FP16": 8 * 5.4e9 * (512 / 16), "onchip_buffer": 36e6},
+    "intel_ARC_B60": {"bandwidth": 456e9, "FP16": 96e12, "INT8": 197e12, "onchip_buffer": 18e6},
 }

@@ -17,11 +17,17 @@ def get_num_hidden_layers(model_params):
 def get_intermediate_size(model_params):
     return getattr(model_params, "intermediate_size")
 
+def get_moe_intermediate_size(model_params):
+    return getattr(model_params, "moe_intermediate_size")
+
 def get_vocab_size(model_params):
     return getattr(model_params, "vocab_size")
     
 def get_num_active_experts(model_params):
     return getattr(model_params, "num_experts_per_tok")
+
+def get_num_experts(model_params):
+    return getattr(model_params, "num_experts")
 
 def post_process(model_params,args):
     hiddensize=get_hidden_size(model_params)
@@ -52,20 +58,23 @@ def get_linear_layers(model_params, tp_size: int):
     intermediate_size=get_intermediate_size(model_params)
     key_value_heads=get_num_key_value_heads(model_params)
     attention_heads=get_num_attention_heads(model_params)
-    
+    moe_intermediate_size = get_moe_intermediate_size(model_params)
+    num_experts = get_num_experts(model_params)
+
     if tp_size > 1:
         assert hidden_size % tp_size == 0
         assert intermediate_size % tp_size == 0
         assert key_value_heads % tp_size == 0
-    
+
     return {
         "q_proj":[hidden_size, hidden_size // tp_size],
         "k_proj":[hidden_size, hidden_size * key_value_heads // attention_heads // tp_size],
         "v_proj":[hidden_size, hidden_size * key_value_heads // attention_heads // tp_size],
         "out_proj":[hidden_size // tp_size, hidden_size],
-        "gate_proj":[hidden_size, intermediate_size // tp_size],
-        "up_proj":[hidden_size,intermediate_size // tp_size],
-        "down_proj":[intermediate_size // tp_size, hidden_size],
+        "gate": [hidden_size, num_experts],
+        "gate_proj":[hidden_size, moe_intermediate_size],
+        "up_proj":[hidden_size, moe_intermediate_size],
+        "down_proj":[moe_intermediate_size, hidden_size],
     }
 
 from configs.Llama import flashattention_transformer_layer_graph,transformer_layer_graph
